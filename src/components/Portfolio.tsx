@@ -186,7 +186,7 @@ const Portfolio: React.FC = () => {
                     Discuss on Discord
                   </a>
                   <a 
-                    href="mailto:sab899899@gmail.com"
+                    href="mailto:sab889899@gmail.com"
                     className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
                   >
                     Send via Email
@@ -397,7 +397,7 @@ const Portfolio: React.FC = () => {
                       Order Similar
                     </a>
                     <a 
-                      href="mailto:sab899899@gmail.com"
+                      href="mailto:sab889899@gmail.com"
                       className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg font-medium transition-colors text-center"
                     >
                       Contact
