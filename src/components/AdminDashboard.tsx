@@ -12,16 +12,15 @@ import {
   Save,
   X,
   Eye,
-  Download
+  Download,
+  Link
 } from 'lucide-react';
 import ClientManagement from './ClientManagement';
 import { 
   getThumbnails,
   addThumbnail,
   updateThumbnail,
-  deleteThumbnail,
-  uploadImage,
-  deleteImage
+  deleteThumbnail
 } from '../utils/database';
 import type { Database } from '../lib/supabase';
 
@@ -37,12 +36,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState<ThumbnailRow | null>(null);
   const [portfolioItems, setPortfolioItems] = useState<ThumbnailRow[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [newThumbnail, setNewThumbnail] = useState({
     title: '',
     category: 'builds',
-    image: '',
+    imageUrl: '',
     views: '',
     likes: '',
     gameOverlay: '🏰'
@@ -72,32 +70,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     onLogout();
   };
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setIsUploading(true);
-      try {
-        const imageUrl = await uploadImage(file);
-        setNewThumbnail(prev => ({
-          ...prev,
-          image: imageUrl
-        }));
-      } catch (error) {
-        console.error('Error uploading image:', error);
-        alert('Error uploading image. Please try again.');
-      } finally {
-        setIsUploading(false);
-      }
+  const validateImageUrl = (url: string): boolean => {
+    try {
+      new URL(url);
+      return /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+    } catch {
+      return false;
     }
   };
 
   const handleAddThumbnail = async () => {
-    if (newThumbnail.title && newThumbnail.image) {
+    if (newThumbnail.title && newThumbnail.imageUrl) {
+      if (!validateImageUrl(newThumbnail.imageUrl)) {
+        alert('Please enter a valid image URL (jpg, jpeg, png, gif, or webp)');
+        return;
+      }
+
       try {
         const thumbnailData: ThumbnailInsert = {
           title: newThumbnail.title,
           category: newThumbnail.category,
-          image_url: newThumbnail.image,
+          image_url: newThumbnail.imageUrl,
           views: newThumbnail.views || '0',
           likes: newThumbnail.likes || '0',
           game_overlay: newThumbnail.gameOverlay
@@ -108,7 +101,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         setNewThumbnail({
           title: '',
           category: 'builds',
-          image: '',
+          imageUrl: '',
           views: '',
           likes: '',
           gameOverlay: '🏰'
@@ -120,7 +113,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         alert('Error adding thumbnail. Please try again.');
       }
     } else {
-      alert('Please fill in the title and upload an image.');
+      alert('Please fill in the title and image URL.');
     }
   };
 
@@ -128,7 +121,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     if (confirm('Are you sure you want to delete this thumbnail?')) {
       try {
         await deleteThumbnail(item.id);
-        await deleteImage(item.image_url);
         setPortfolioItems(prev => prev.filter(thumbnail => thumbnail.id !== item.id));
         alert('Thumbnail deleted successfully!');
       } catch (error) {
@@ -143,7 +135,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setNewThumbnail({
       title: item.title,
       category: item.category,
-      image: item.image_url,
+      imageUrl: item.image_url,
       views: item.views,
       likes: item.likes,
       gameOverlay: item.game_overlay
@@ -151,12 +143,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const handleUpdateThumbnail = async () => {
-    if (editingItem && newThumbnail.title && newThumbnail.image) {
+    if (editingItem && newThumbnail.title && newThumbnail.imageUrl) {
+      if (!validateImageUrl(newThumbnail.imageUrl)) {
+        alert('Please enter a valid image URL (jpg, jpeg, png, gif, or webp)');
+        return;
+      }
+
       try {
         const updates = {
           title: newThumbnail.title,
           category: newThumbnail.category,
-          image_url: newThumbnail.image,
+          image_url: newThumbnail.imageUrl,
           views: newThumbnail.views,
           likes: newThumbnail.likes,
           game_overlay: newThumbnail.gameOverlay
@@ -172,7 +169,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         setNewThumbnail({
           title: '',
           category: 'builds',
-          image: '',
+          imageUrl: '',
           views: '',
           likes: '',
           gameOverlay: '🏰'
@@ -183,7 +180,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         alert('Error updating thumbnail. Please try again.');
       }
     } else {
-      alert('Please fill in the title and upload an image.');
+      alert('Please fill in the title and image URL.');
     }
   };
 
@@ -362,7 +359,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         <label className="block text-gray-400 mb-2">Email</label>
                         <input
                           type="email"
-                          value="sab899899@gmail.com"
+                          value="sab889899@gmail.com"
                           className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white"
                           readOnly
                         />
@@ -434,7 +431,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   setNewThumbnail({
                     title: '',
                     category: 'builds',
-                    image: '',
+                    imageUrl: '',
                     views: '',
                     likes: '',
                     gameOverlay: '🏰'
@@ -510,49 +507,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
 
               <div>
-                <label className="block text-white font-semibold mb-2">Thumbnail Image *</label>
-                <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-green-500 transition-colors">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    id="thumbnail-upload-modal"
-                    disabled={isUploading}
-                  />
-                  <label htmlFor="thumbnail-upload-modal" className="cursor-pointer">
-                    {isUploading ? (
-                      <div className="space-y-4">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto"></div>
-                        <p className="text-white font-semibold">Uploading image...</p>
-                      </div>
-                    ) : newThumbnail.image ? (
-                      <div className="space-y-4">
-                        <img
-                          src={newThumbnail.image}
-                          alt="Preview"
-                          className="max-w-full h-48 object-contain mx-auto rounded-lg"
-                        />
-                        <p className="text-green-400 font-semibold">Image uploaded successfully!</p>
-                        <p className="text-gray-400 text-sm">Click to change image</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <Upload className="w-12 h-12 text-gray-400 mx-auto" />
-                        <div>
-                          <p className="text-white font-semibold">Click to upload thumbnail</p>
-                          <p className="text-gray-400 text-sm">PNG, JPG up to 10MB</p>
-                        </div>
-                      </div>
-                    )}
-                  </label>
-                </div>
+                <label className="block text-white font-semibold mb-2">
+                  <Link className="w-5 h-5 inline mr-2" />
+                  Image URL *
+                </label>
+                <input
+                  type="url"
+                  value={newThumbnail.imageUrl}
+                  onChange={(e) => setNewThumbnail(prev => ({ ...prev, imageUrl: e.target.value }))}
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-green-500"
+                  placeholder="https://example.com/image.jpg"
+                />
+                <p className="text-gray-400 text-sm mt-2">
+                  Enter a direct link to your thumbnail image (jpg, jpeg, png, gif, or webp)
+                </p>
+                
+                {newThumbnail.imageUrl && validateImageUrl(newThumbnail.imageUrl) && (
+                  <div className="mt-4 border border-gray-600 rounded-lg p-4">
+                    <p className="text-white font-semibold mb-2">Preview:</p>
+                    <img
+                      src={newThumbnail.imageUrl}
+                      alt="Preview"
+                      className="max-w-full h-48 object-contain rounded-lg"
+                      onError={() => alert('Failed to load image. Please check the URL.')}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-4">
                 <button
                   onClick={editingItem ? handleUpdateThumbnail : handleAddThumbnail}
-                  disabled={isUploading || !newThumbnail.title || !newThumbnail.image}
+                  disabled={!newThumbnail.title || !newThumbnail.imageUrl}
                   className="flex-1 bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 disabled:from-gray-600 disabled:to-gray-600 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center disabled:cursor-not-allowed"
                 >
                   <Save className="w-5 h-5 mr-2" />
@@ -565,7 +551,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     setNewThumbnail({
                       title: '',
                       category: 'builds',
-                      image: '',
+                      imageUrl: '',
                       views: '',
                       likes: '',
                       gameOverlay: '🏰'
