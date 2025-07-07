@@ -26,18 +26,20 @@ import {
   FileText
 } from 'lucide-react';
 import { 
-  Client, 
-  Order, 
-  Communication,
-  loadClients,
-  loadOrders,
-  loadCommunications,
+  getClients,
+  getOrders,
+  getCommunications,
   addClient,
   addOrder,
   addCommunication,
   updateClient,
   deleteClient
-} from '../utils/storage';
+} from '../utils/database';
+import type { Database } from '../lib/supabase';
+
+type ClientRow = Database['public']['Tables']['clients']['Row'];
+type OrderRow = Database['public']['Tables']['orders']['Row'];
+type CommunicationRow = Database['public']['Tables']['communications']['Row'];
 
 const ClientManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState('clients');
@@ -46,22 +48,40 @@ const ClientManagement: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showCommunicationModal, setShowCommunicationModal] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [selectedClient, setSelectedClient] = useState<ClientRow | null>(null);
+  const [editingClient, setEditingClient] = useState<ClientRow | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // State for data
-  const [clients, setClients] = useState<Client[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [communications, setCommunications] = useState<Communication[]>([]);
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [communications, setCommunications] = useState<CommunicationRow[]>([]);
 
   // Load data on component mount
   useEffect(() => {
-    setClients(loadClients());
-    setOrders(loadOrders());
-    setCommunications(loadCommunications());
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [clientsData, ordersData, communicationsData] = await Promise.all([
+          getClients(),
+          getOrders(),
+          getCommunications()
+        ]);
+        setClients(clientsData);
+        setOrders(ordersData);
+        setCommunications(communicationsData);
+      } catch (error) {
+        console.error('Error loading data:', error);
+        alert('Error loading data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
   }, []);
 
-  const [newClient, setNewClient] = useState<Partial<Client>>({
+  const [newClient, setNewClient] = useState({
     name: '',
     email: '',
     phone: '',
@@ -75,7 +95,7 @@ const ClientManagement: React.FC = () => {
     preferredContact: 'discord'
   });
 
-  const [newOrder, setNewOrder] = useState<Partial<Order>>({
+  const [newOrder, setNewOrder] = useState({
     packageType: 'basic',
     title: '',
     description: '',
@@ -85,7 +105,7 @@ const ClientManagement: React.FC = () => {
     notes: ''
   });
 
-  const [newCommunication, setNewCommunication] = useState<Partial<Communication>>({
+  const [newCommunication, setNewCommunication] = useState({
     type: 'discord',
     subject: '',
     message: '',
@@ -118,29 +138,30 @@ const ClientManagement: React.FC = () => {
   const filteredClients = clients.filter(client => {
     const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         client.channelName.toLowerCase().includes(searchTerm.toLowerCase());
+                         client.channel_name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filterStatus === 'all' || client.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
 
-  const handleAddClient = () => {
+  const handleAddClient = async () => {
     if (newClient.name && newClient.email) {
       try {
-        const client = addClient({
+        const clientData = {
           name: newClient.name,
           email: newClient.email,
           phone: newClient.phone || '',
-          platform: newClient.platform as any,
-          channelName: newClient.channelName || '',
-          channelUrl: newClient.channelUrl || '',
+          platform: newClient.platform,
+          channel_name: newClient.channelName || '',
+          channel_url: newClient.channelUrl || '',
           subscribers: newClient.subscribers || '0',
-          status: newClient.status as any,
+          status: newClient.status,
           rating: newClient.rating || 5,
           notes: newClient.notes || '',
-          preferredContact: newClient.preferredContact as any
-        });
+          preferred_contact: newClient.preferredContact
+        };
         
-        setClients(prev => [...prev, client]);
+        const client = await addClient(clientData);
+        setClients(prev => [client, ...prev]);
         setNewClient({
           name: '',
           email: '',
@@ -165,38 +186,39 @@ const ClientManagement: React.FC = () => {
     }
   };
 
-  const handleAddOrder = () => {
+  const handleAddOrder = async () => {
     if (selectedClient && newOrder.title) {
       try {
-        const order = addOrder({
-          clientId: selectedClient.id,
-          packageType: newOrder.packageType as any,
+        const orderData = {
+          client_id: selectedClient.id,
+          package_type: newOrder.packageType,
           title: newOrder.title,
           description: newOrder.description || '',
           price: newOrder.price || 100,
-          status: 'pending',
-          thumbnailsCount: newOrder.thumbnailsCount || 1,
-          maxRevisions: newOrder.maxRevisions || 1,
+          status: 'pending' as const,
+          thumbnails_count: newOrder.thumbnailsCount || 1,
+          max_revisions: newOrder.maxRevisions || 1,
           files: [],
           notes: newOrder.notes || ''
-        });
+        };
         
-        setOrders(prev => [...prev, order]);
+        const order = await addOrder(orderData);
+        setOrders(prev => [order, ...prev]);
         
         // Update client stats
-        updateClient(selectedClient.id, {
-          totalOrders: selectedClient.totalOrders + 1,
-          totalSpent: selectedClient.totalSpent + order.price,
-          lastContact: new Date().toISOString().split('T')[0]
+        await updateClient(selectedClient.id, {
+          total_orders: selectedClient.total_orders + 1,
+          total_spent: selectedClient.total_spent + order.price,
+          last_contact: new Date().toISOString().split('T')[0]
         });
         
         setClients(prev => prev.map(client => 
           client.id === selectedClient.id 
             ? { 
                 ...client, 
-                totalOrders: client.totalOrders + 1,
-                totalSpent: client.totalSpent + order.price,
-                lastContact: new Date().toISOString().split('T')[0]
+                total_orders: client.total_orders + 1,
+                total_spent: client.total_spent + order.price,
+                last_contact: new Date().toISOString().split('T')[0]
               }
             : client
         ));
@@ -221,27 +243,28 @@ const ClientManagement: React.FC = () => {
     }
   };
 
-  const handleAddCommunication = () => {
+  const handleAddCommunication = async () => {
     if (selectedClient && newCommunication.subject) {
       try {
-        const communication = addCommunication({
-          clientId: selectedClient.id,
-          type: newCommunication.type as any,
+        const communicationData = {
+          client_id: selectedClient.id,
+          type: newCommunication.type,
           subject: newCommunication.subject,
           message: newCommunication.message || '',
-          direction: newCommunication.direction as any
-        });
+          direction: newCommunication.direction
+        };
         
-        setCommunications(prev => [...prev, communication]);
+        const communication = await addCommunication(communicationData);
+        setCommunications(prev => [communication, ...prev]);
         
         // Update client last contact
-        updateClient(selectedClient.id, {
-          lastContact: new Date().toISOString().split('T')[0]
+        await updateClient(selectedClient.id, {
+          last_contact: new Date().toISOString().split('T')[0]
         });
         
         setClients(prev => prev.map(client => 
           client.id === selectedClient.id 
-            ? { ...client, lastContact: new Date().toISOString().split('T')[0] }
+            ? { ...client, last_contact: new Date().toISOString().split('T')[0] }
             : client
         ));
         
@@ -262,10 +285,10 @@ const ClientManagement: React.FC = () => {
     }
   };
 
-  const handleDeleteClient = (id: number) => {
+  const handleDeleteClient = async (id: string) => {
     if (confirm('Are you sure you want to delete this client? This will also delete all associated orders and communications.')) {
       try {
-        deleteClient(id);
+        await deleteClient(id);
         setClients(prev => prev.filter(c => c.id !== id));
         alert('Client deleted successfully!');
       } catch (error) {
@@ -275,8 +298,17 @@ const ClientManagement: React.FC = () => {
     }
   };
 
-  const clientOrders = selectedClient ? orders.filter(order => order.clientId === selectedClient.id) : [];
-  const clientCommunications = selectedClient ? communications.filter(comm => comm.clientId === selectedClient.id) : [];
+  const clientOrders = selectedClient ? orders.filter(order => order.client_id === selectedClient.id) : [];
+  const clientCommunications = selectedClient ? communications.filter(comm => comm.client_id === selectedClient.id) : [];
+
+  if (loading) {
+    return (
+      <div className="text-center py-16">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
+        <p className="text-gray-400">Loading client data...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -319,7 +351,7 @@ const ClientManagement: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-400 text-sm">Total Revenue</p>
-              <p className="text-2xl font-bold text-white">₹{clients.reduce((sum, client) => sum + client.totalSpent, 0)}</p>
+              <p className="text-2xl font-bold text-white">₹{clients.reduce((sum, client) => sum + client.total_spent, 0)}</p>
             </div>
             <DollarSign className="w-8 h-8 text-purple-400" />
           </div>
@@ -397,7 +429,7 @@ const ClientManagement: React.FC = () => {
                       <div>
                         <div className="text-white font-medium">{client.name}</div>
                         <div className="text-gray-400 text-sm">{client.email}</div>
-                        <div className="text-gray-400 text-sm">{client.channelName} ({client.subscribers})</div>
+                        <div className="text-gray-400 text-sm">{client.channel_name} ({client.subscribers})</div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -406,14 +438,14 @@ const ClientManagement: React.FC = () => {
                         <span className="ml-2 text-gray-300 capitalize">{client.platform}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-white">{client.totalOrders}</td>
-                    <td className="px-6 py-4 text-white">₹{client.totalSpent}</td>
+                    <td className="px-6 py-4 text-white">{client.total_orders}</td>
+                    <td className="px-6 py-4 text-white">₹{client.total_spent}</td>
                     <td className="px-6 py-4">
                       <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(client.status)}`}>
                         {client.status.toUpperCase()}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-300">{client.lastContact}</td>
+                    <td className="px-6 py-4 text-gray-300">{client.last_contact}</td>
                     <td className="px-6 py-4">
                       <div className="flex space-x-2">
                         <button
@@ -490,7 +522,7 @@ const ClientManagement: React.FC = () => {
                   <label className="block text-white font-semibold mb-2">Platform</label>
                   <select
                     value={newClient.platform}
-                    onChange={(e) => setNewClient(prev => ({ ...prev, platform: e.target.value as any }))}
+                    onChange={(e) => setNewClient(prev => ({ ...prev, platform: e.target.value }))}
                     className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-green-500"
                   >
                     <option value="youtube">YouTube</option>
@@ -526,7 +558,7 @@ const ClientManagement: React.FC = () => {
                   <label className="block text-white font-semibold mb-2">Status</label>
                   <select
                     value={newClient.status}
-                    onChange={(e) => setNewClient(prev => ({ ...prev, status: e.target.value as any }))}
+                    onChange={(e) => setNewClient(prev => ({ ...prev, status: e.target.value }))}
                     className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-green-500"
                   >
                     <option value="active">Active</option>

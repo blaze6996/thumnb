@@ -16,13 +16,17 @@ import {
 } from 'lucide-react';
 import ClientManagement from './ClientManagement';
 import { 
-  ThumbnailItem, 
-  loadThumbnails, 
-  addThumbnail, 
-  updateThumbnail, 
+  getThumbnails,
+  addThumbnail,
+  updateThumbnail,
   deleteThumbnail,
-  compressImage 
-} from '../utils/storage';
+  uploadImage,
+  deleteImage
+} from '../utils/database';
+import type { Database } from '../lib/supabase';
+
+type ThumbnailRow = Database['public']['Tables']['thumbnails']['Row'];
+type ThumbnailInsert = Database['public']['Tables']['thumbnails']['Insert'];
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -31,9 +35,10 @@ interface AdminDashboardProps {
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState('portfolio');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<ThumbnailItem | null>(null);
-  const [portfolioItems, setPortfolioItems] = useState<ThumbnailItem[]>([]);
+  const [editingItem, setEditingItem] = useState<ThumbnailRow | null>(null);
+  const [portfolioItems, setPortfolioItems] = useState<ThumbnailRow[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [newThumbnail, setNewThumbnail] = useState({
     title: '',
     category: 'builds',
@@ -45,8 +50,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // Load data on component mount
   useEffect(() => {
-    const loadedThumbnails = loadThumbnails();
-    setPortfolioItems(loadedThumbnails);
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const thumbnails = await getThumbnails();
+        setPortfolioItems(thumbnails);
+      } catch (error) {
+        console.error('Error loading data:', error);
+        alert('Error loading data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
   }, []);
 
   const handleLogout = () => {
@@ -60,34 +77,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     if (file) {
       setIsUploading(true);
       try {
-        // Compress image to reduce storage size
-        const compressedImage = await compressImage(file, 800, 0.8);
+        const imageUrl = await uploadImage(file);
         setNewThumbnail(prev => ({
           ...prev,
-          image: compressedImage
+          image: imageUrl
         }));
       } catch (error) {
-        console.error('Error processing image:', error);
-        alert('Error processing image. Please try again.');
+        console.error('Error uploading image:', error);
+        alert('Error uploading image. Please try again.');
       } finally {
         setIsUploading(false);
       }
     }
   };
 
-  const handleAddThumbnail = () => {
+  const handleAddThumbnail = async () => {
     if (newThumbnail.title && newThumbnail.image) {
       try {
-        const newItem = addThumbnail({
+        const thumbnailData: ThumbnailInsert = {
           title: newThumbnail.title,
           category: newThumbnail.category,
-          image: newThumbnail.image,
+          image_url: newThumbnail.image,
           views: newThumbnail.views || '0',
           likes: newThumbnail.likes || '0',
-          gameOverlay: newThumbnail.gameOverlay
-        });
+          game_overlay: newThumbnail.gameOverlay
+        };
         
-        setPortfolioItems(prev => [...prev, newItem]);
+        const newItem = await addThumbnail(thumbnailData);
+        setPortfolioItems(prev => [newItem, ...prev]);
         setNewThumbnail({
           title: '',
           category: 'builds',
@@ -107,11 +124,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const handleDeleteThumbnail = (id: number) => {
+  const handleDeleteThumbnail = async (item: ThumbnailRow) => {
     if (confirm('Are you sure you want to delete this thumbnail?')) {
       try {
-        deleteThumbnail(id);
-        setPortfolioItems(prev => prev.filter(item => item.id !== id));
+        await deleteThumbnail(item.id);
+        await deleteImage(item.image_url);
+        setPortfolioItems(prev => prev.filter(thumbnail => thumbnail.id !== item.id));
         alert('Thumbnail deleted successfully!');
       } catch (error) {
         console.error('Error deleting thumbnail:', error);
@@ -120,35 +138,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const handleEditThumbnail = (item: ThumbnailItem) => {
+  const handleEditThumbnail = (item: ThumbnailRow) => {
     setEditingItem(item);
     setNewThumbnail({
       title: item.title,
       category: item.category,
-      image: item.image,
+      image: item.image_url,
       views: item.views,
       likes: item.likes,
-      gameOverlay: item.gameOverlay
+      gameOverlay: item.game_overlay
     });
   };
 
-  const handleUpdateThumbnail = () => {
+  const handleUpdateThumbnail = async () => {
     if (editingItem && newThumbnail.title && newThumbnail.image) {
       try {
-        updateThumbnail(editingItem.id, {
+        const updates = {
           title: newThumbnail.title,
           category: newThumbnail.category,
-          image: newThumbnail.image,
+          image_url: newThumbnail.image,
           views: newThumbnail.views,
           likes: newThumbnail.likes,
-          gameOverlay: newThumbnail.gameOverlay
-        });
+          game_overlay: newThumbnail.gameOverlay
+        };
         
+        const updatedItem = await updateThumbnail(editingItem.id, updates);
         setPortfolioItems(prev => 
           prev.map(item => 
-            item.id === editingItem.id 
-              ? { ...item, ...newThumbnail }
-              : item
+            item.id === editingItem.id ? updatedItem : item
           )
         );
         setEditingItem(null);
@@ -176,6 +193,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'analytics', name: 'Analytics', icon: <BarChart3 className="w-5 h-5" /> },
     { id: 'settings', name: 'Settings', icon: <Settings className="w-5 h-5" /> }
   ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading admin dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-900">
@@ -257,11 +285,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       <div key={item.id} className="bg-gray-800/50 backdrop-blur-sm rounded-xl overflow-hidden border border-gray-700">
                         <div className="relative h-48">
                           <img
-                            src={item.image}
+                            src={item.image_url}
                             alt={item.title}
                             className="w-full h-full object-cover"
                           />
-                          <div className="absolute top-2 right-2 text-2xl">{item.gameOverlay}</div>
+                          <div className="absolute top-2 right-2 text-2xl">{item.game_overlay}</div>
                           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                             <h3 className="text-white font-bold text-sm">{item.title}</h3>
                             <div className="flex items-center justify-between text-xs text-gray-300 mt-1">
@@ -284,7 +312,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                                 <Edit size={16} />
                               </button>
                               <button
-                                onClick={() => handleDeleteThumbnail(item.id)}
+                                onClick={() => handleDeleteThumbnail(item)}
                                 className="text-red-400 hover:text-red-300 transition-colors"
                               >
                                 <Trash2 size={16} />
@@ -355,18 +383,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     <h3 className="text-white font-semibold mb-4">Data Management</h3>
                     <div className="space-y-4">
                       <button
-                        onClick={() => {
-                          const data = {
-                            thumbnails: portfolioItems,
-                            exportDate: new Date().toISOString()
-                          };
-                          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `thumbnailpro-backup-${new Date().toISOString().split('T')[0]}.json`;
-                          a.click();
-                          URL.revokeObjectURL(url);
+                        onClick={async () => {
+                          try {
+                            const data = {
+                              thumbnails: portfolioItems,
+                              exportDate: new Date().toISOString()
+                            };
+                            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `thumbnailpro-backup-${new Date().toISOString().split('T')[0]}.json`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          } catch (error) {
+                            console.error('Error exporting data:', error);
+                            alert('Error exporting data. Please try again.');
+                          }
                         }}
                         className="flex items-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
                       >
@@ -491,7 +524,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     {isUploading ? (
                       <div className="space-y-4">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto"></div>
-                        <p className="text-white font-semibold">Processing image...</p>
+                        <p className="text-white font-semibold">Uploading image...</p>
                       </div>
                     ) : newThumbnail.image ? (
                       <div className="space-y-4">
@@ -508,7 +541,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         <Upload className="w-12 h-12 text-gray-400 mx-auto" />
                         <div>
                           <p className="text-white font-semibold">Click to upload thumbnail</p>
-                          <p className="text-gray-400 text-sm">PNG, JPG up to 10MB (will be compressed)</p>
+                          <p className="text-gray-400 text-sm">PNG, JPG up to 10MB</p>
                         </div>
                       </div>
                     )}

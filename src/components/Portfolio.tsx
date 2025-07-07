@@ -1,18 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { ExternalLink, Heart, Eye, Filter, Upload, X } from 'lucide-react';
-import { ThumbnailItem, loadThumbnails } from '../utils/storage';
+import { getThumbnails } from '../utils/database';
+import type { Database } from '../lib/supabase';
+
+type ThumbnailRow = Database['public']['Tables']['thumbnails']['Row'];
 
 const Portfolio: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState('all');
   const [showUpload, setShowUpload] = useState(false);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
-  const [portfolioItems, setPortfolioItems] = useState<ThumbnailItem[]>([]);
-  const [selectedThumbnail, setSelectedThumbnail] = useState<ThumbnailItem | null>(null);
+  const [portfolioItems, setPortfolioItems] = useState<ThumbnailRow[]>([]);
+  const [selectedThumbnail, setSelectedThumbnail] = useState<ThumbnailRow | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Load thumbnails on component mount
   useEffect(() => {
-    const loadedThumbnails = loadThumbnails();
-    setPortfolioItems(loadedThumbnails);
+    const loadThumbnails = async () => {
+      try {
+        setLoading(true);
+        const thumbnails = await getThumbnails();
+        setPortfolioItems(thumbnails);
+      } catch (error) {
+        console.error('Error loading thumbnails:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadThumbnails();
   }, []);
 
   // Close modal on escape key
@@ -59,18 +74,31 @@ const Portfolio: React.FC = () => {
     }
   };
 
-  const handleThumbnailClick = (item: ThumbnailItem) => {
+  const handleThumbnailClick = (item: ThumbnailRow) => {
     setSelectedThumbnail(item);
   };
 
-  const handleDownloadThumbnail = (item: ThumbnailItem) => {
+  const handleDownloadThumbnail = (item: ThumbnailRow) => {
     const link = document.createElement('a');
-    link.href = item.image;
+    link.href = item.image_url;
     link.download = `${item.title.replace(/\s+/g, '_').toLowerCase()}_thumbnail.jpg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  if (loading) {
+    return (
+      <section id="portfolio" className="py-20 bg-gray-900 relative overflow-hidden">
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500 mx-auto mb-4"></div>
+            <p className="text-gray-400">Loading portfolio...</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section id="portfolio" className="py-20 bg-gray-900 relative overflow-hidden">
@@ -214,7 +242,7 @@ const Portfolio: React.FC = () => {
               >
                 <div className="relative h-48 overflow-hidden">
                   <img
-                    src={item.image}
+                    src={item.image_url}
                     alt={item.title}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />
@@ -224,7 +252,7 @@ const Portfolio: React.FC = () => {
                   
                   {/* Game Overlay Icon */}
                   <div className="absolute top-4 right-4 text-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform group-hover:scale-110">
-                    {item.gameOverlay}
+                    {item.game_overlay}
                   </div>
                   
                   {/* Hover Overlay */}
@@ -294,14 +322,14 @@ const Portfolio: React.FC = () => {
               {/* Image Section */}
               <div className="lg:w-2/3 relative bg-black/20 flex items-center justify-center p-4">
                 <img
-                  src={selectedThumbnail.image}
+                  src={selectedThumbnail.image_url}
                   alt={selectedThumbnail.title}
                   className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
                 />
                 
                 {/* Game Overlay */}
                 <div className="absolute top-8 right-8 text-6xl opacity-80">
-                  {selectedThumbnail.gameOverlay}
+                  {selectedThumbnail.game_overlay}
                 </div>
               </div>
 
@@ -338,7 +366,7 @@ const Portfolio: React.FC = () => {
                   <div className="mb-8">
                     <h3 className="text-white font-semibold mb-2">Date Added</h3>
                     <p className="text-gray-300">
-                      {new Date(selectedThumbnail.dateAdded).toLocaleDateString('en-US', {
+                      {new Date(selectedThumbnail.created_at).toLocaleDateString('en-US', {
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric'
